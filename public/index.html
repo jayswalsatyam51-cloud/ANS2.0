@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VitalScan Report Extractor</title>
+<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f0f0; color: #222; font-size: 14px; }
+  #app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* LEFT */
+  #left { width: 290px; min-width: 260px; background: #16213e; color: #eee; display: flex; flex-direction: column; padding: 18px; gap: 12px; overflow-y: auto; flex-shrink: 0; }
+  #left h1 { font-size: 15px; color: #fff; font-weight: 700; letter-spacing: 0.5px; }
+  #left .desc { font-size: 11px; color: #9ab; line-height: 1.6; }
+
+  #upload-area { border: 2px dashed #3a5068; border-radius: 8px; padding: 18px 12px; text-align: center; cursor: pointer; transition: all 0.2s; background: #1e2d45; }
+  #upload-area:hover { border-color: #7eb3d8; background: #223250; }
+  #upload-area input { display: none; }
+  #upload-area .icon { font-size: 24px; margin-bottom: 5px; }
+  #upload-area p { font-size: 11px; color: #8ab; }
+  #file-name { font-size: 11px; color: #7ec8e3; word-break: break-all; min-height: 16px; }
+  #extract-btn { background: #c0392b; color: #fff; border: none; border-radius: 6px; padding: 11px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+  #extract-btn:hover:not(:disabled) { background: #a93226; }
+  #extract-btn:disabled { background: #4a4a5a; cursor: not-allowed; color: #888; }
+
+  /* Progress */
+  #progress-wrap { display: none; flex-direction: column; gap: 5px; }
+  #progress-wrap.visible { display: flex; }
+  #progress-label { font-size: 11px; color: #f0a500; }
+  #progress-bar-bg { background: #2a3f5a; border-radius: 20px; height: 8px; overflow: hidden; }
+  #progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #c0392b, #f0a500); border-radius: 20px; transition: width 0.4s ease; }
+  #progress-pct { font-size: 11px; color: #9ab; text-align: right; }
+
+  .divider { border: none; border-top: 1px solid #2a3f5a; }
+  .action-btn { background: #1e2d45; color: #ccd; border: 1px solid #2e4a66; border-radius: 6px; padding: 9px 12px; font-size: 11px; cursor: pointer; text-align: left; transition: background 0.2s; width: 100%; }
+  .action-btn:hover:not(:disabled) { background: #2a3f5a; }
+  .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .footer-note { font-size: 10px; color: #566; line-height: 1.5; margin-top: auto; padding-top: 10px; border-top: 1px solid #2a3f5a; }
+
+  /* RIGHT */
+  #right { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #e8e8e8; }
+  #toolbar { background: #f8f8f8; border-bottom: 1px solid #ddd; padding: 8px 18px; }
+  #toolbar span { font-size: 11px; color: #999; }
+
+  #editor-wrap { flex: 1; overflow-y: auto; }
+  #editor { max-width: 800px; margin: 0 auto; padding: 44px 52px; min-height: 100%; outline: none; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.1); font-size: 13px; line-height: 1.7; }
+
+  /* ── Document Styles ── */
+  .doc-patient {
+    border: 1.5px solid #111;
+    border-radius: 3px;
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 32px;
+    font-size: 13px;
+  }
+  .doc-patient .pr { }
+  .doc-patient .pr strong { font-weight: 700; }
+
+  .doc-section { margin-bottom: 32px; }
+  .doc-section-header {
+    font-size: 14px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid #111;
+  }
+  .doc-section-header .slashes { color: #aaa; font-weight: 400; letter-spacing: 0; }
+
+  .doc-group { margin-bottom: 14px; }
+  .doc-group-title { font-size: 12.5px; font-weight: 700; margin-bottom: 3px; color: #111; }
+  .doc-group ul { list-style: none; padding: 0; margin: 0 0 0 4px; }
+  .doc-group ul li { padding: 1.5px 0 1.5px 16px; position: relative; font-size: 13px; color: #222; }
+  .doc-group ul li::before { content: "*"; position: absolute; left: 4px; color: #777; font-size: 11px; top: 4px; }
+
+  .doc-flat-list { list-style: none; padding: 0; margin: 0 0 0 4px; }
+  .doc-flat-list li { padding: 1.5px 0 1.5px 16px; position: relative; font-size: 13px; color: #222; }
+  .doc-flat-list li::before { content: "*"; position: absolute; left: 4px; color: #777; font-size: 11px; top: 4px; }
+
+  .flag { color: #b03a2e; font-weight: 700; }
+
+  .doc-summary-box { border: 2px solid #111; border-radius: 3px; padding: 14px 18px; background: #fafafa; }
+  .doc-summary-box ul { list-style: none; padding: 0; margin: 0 0 0 4px; }
+  .doc-summary-box ul li { padding: 2px 0 2px 16px; position: relative; font-size: 13px; }
+  .doc-summary-box ul li::before { content: "*"; position: absolute; left: 4px; color: #777; font-size: 11px; top: 5px; }
+
+  .placeholder { color: #bbb; text-align: center; padding: 80px 30px; font-size: 13px; line-height: 2.2; }
+
+  /* ── Print / PDF styles ── */
+  @media print {
+    body { background: #fff; font-size: 12px; }
+    #left, #toolbar { display: none !important; }
+    #app { display: block; height: auto; overflow: visible; }
+    #right { display: block; overflow: visible; }
+    #editor-wrap { overflow: visible; }
+    #editor { max-width: 100%; margin: 0; padding: 0; box-shadow: none; min-height: unset; }
+    .doc-section-header { font-size: 13px; }
+    .flag { color: #b03a2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .doc-summary-box { background: #fafafa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="left">
+    <h1>🫀 VitalScan Extractor</h1>
+    <p class="desc">Upload any VitalScan PDF. AI extracts all sections, flags out-of-range values, and generates an editable clinical document.</p>
+
+    <div id="upload-area" onclick="document.getElementById('pdf-input').click()">
+      <div class="icon">📄</div>
+      <p>Click to upload PDF<br><span style="font-size:10px;color:#567;">(any VitalScan report format)</span></p>
+      <input type="file" id="pdf-input" accept="application/pdf">
+    </div>
+    <div id="file-name">No file selected</div>
+
+    <button id="extract-btn" disabled>⚡ Extract Report</button>
+
+    <div id="progress-wrap">
+      <div id="progress-label">Initialising…</div>
+      <div id="progress-bar-bg"><div id="progress-bar"></div></div>
+      <div id="progress-pct">0%</div>
+    </div>
+
+    <hr class="divider">
+    <button class="action-btn" id="copy-btn" disabled>📋 Copy to Clipboard</button>
+    <button class="action-btn" id="pdf-btn" disabled>⬇️ Export as PDF</button>
+    <button class="action-btn" id="docx-btn" disabled>📝 Export as DOCX</button>
+    <button class="action-btn" id="clear-btn" disabled>🗑️ Clear Document</button>
+    <p class="footer-note">All results are for physician review only. Final diagnosis is the sole responsibility of the licensed medical practitioner.</p>
+  </div>
+
+  <div id="right">
+    <div id="toolbar">
+      <span>📝 Edit directly in the document &nbsp;|&nbsp; <b style="color:#b03a2e">| FLAG</b> = out-of-range or highlighted red/orange in source PDF</span>
+    </div>
+    <div id="editor-wrap">
+      <div id="editor" contenteditable="true">
+        <div class="placeholder">Extracted report will appear here.<br>Upload a VitalScan PDF and click <b>Extract Report</b>.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+let pdfBase64 = null;
+let progressTimer = null;
+
+const pdfInput   = document.getElementById('pdf-input');
+const fileNameEl = document.getElementById('file-name');
+const extractBtn = document.getElementById('extract-btn');
+const editor     = document.getElementById('editor');
+const copyBtn    = document.getElementById('copy-btn');
+const pdfBtn     = document.getElementById('pdf-btn');
+const docxBtn    = document.getElementById('docx-btn');
+const clearBtn   = document.getElementById('clear-btn');
+const progWrap   = document.getElementById('progress-wrap');
+const progBar    = document.getElementById('progress-bar');
+const progPct    = document.getElementById('progress-pct');
+const progLabel  = document.getElementById('progress-label');
+
+// ── Progress simulation ──────────────────────────────────────
+const stages = [
+  { pct: 8,  label: 'Reading PDF pages…' },
+  { pct: 18, label: 'Identifying report type…' },
+  { pct: 30, label: 'Extracting ANS metrics…' },
+  { pct: 45, label: 'Extracting cardiovascular data…' },
+  { pct: 58, label: 'Extracting ECG data…' },
+  { pct: 70, label: 'Applying FLAG logic…' },
+  { pct: 80, label: 'Building flagged summary…' },
+  { pct: 88, label: 'Formatting document…' },
+  { pct: 94, label: 'Finalising output…' },
+];
+let stageIdx = 0;
+
+function startProgress() {
+  stageIdx = 0;
+  setProgress(0, 'Initialising…');
+  progWrap.classList.add('visible');
+  progressTimer = setInterval(() => {
+    if (stageIdx < stages.length) {
+      const s = stages[stageIdx++];
+      setProgress(s.pct, s.label);
+    }
+  }, 2800);
+}
+
+function finishProgress() {
+  clearInterval(progressTimer);
+  setProgress(100, 'Complete ✓');
+  setTimeout(() => progWrap.classList.remove('visible'), 2000);
+}
+
+function setProgress(pct, label) {
+  progBar.style.width = pct + '%';
+  progPct.textContent = pct + '%';
+  progLabel.textContent = label;
+}
+
+// ── File load ────────────────────────────────────────────────
+pdfInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  fileNameEl.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    pdfBase64 = reader.result.split(',')[1];
+    extractBtn.disabled = false;
+    fileNameEl.textContent = '✓ ' + file.name;
+  };
+  reader.readAsDataURL(file);
+});
+
+// ── Extract ──────────────────────────────────────────────────
+extractBtn.addEventListener('click', async () => {
+  if (!pdfBase64) return;
+  extractBtn.disabled = true;
+  [copyBtn, pdfBtn, docxBtn, clearBtn].forEach(b => b.disabled = true);
+  editor.innerHTML = '<div class="placeholder">Reading PDF and extracting data…</div>';
+  startProgress();
+
+  try {
+    const res = await fetch('/api/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdfBase64 })
+    });
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    finishProgress();
+    renderDoc(data.result);
+    [copyBtn, pdfBtn, docxBtn, clearBtn].forEach(b => b.disabled = false);
+
+  } catch (err) {
+    clearInterval(progressTimer);
+    progWrap.classList.remove('visible');
+    extractBtn.disabled = false;
+    editor.innerHTML = `<div class="placeholder">Extraction failed.<br><span style="color:#c0392b">${err.message}</span><br>Please try again.</div>`;
+  }
+});
+
+// ── Renderer ─────────────────────────────────────────────────
+function flag(txt) {
+  return txt.replace(/\|\s*FLAG/g, '<span class="flag">| FLAG</span>');
+}
+
+function renderDoc(raw) {
+  const lines = raw.split('\n').map(l => l.trimEnd());
+  let html = '';
+  let i = 0;
+
+  function parsePatient() {
+    let rows = '';
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) { i++; continue; }
+      if (isSectionHeader(t)) break;
+      i++;
+      const ci = t.indexOf(':');
+      if (ci < 0) continue;
+      const k = t.substring(0, ci).trim();
+      const v = flag(t.substring(ci + 1).trim());
+      rows += `<div class="pr"><strong>${k}:</strong> ${v}</div>`;
+    }
+    return `<div class="doc-patient">${rows}</div>`;
+  }
+
+  function isSectionHeader(t) {
+    return /^(PATIENT|AUTONOMICS\s*\/\/|CARDIOVASCULAR\s*\/\/|ELECTROCARDIOGRAM\s*\/\/|Summary of Flagged Findings)/i.test(t);
+  }
+
+  function isSubHeader(t) {
+    return t.length > 0 && !t.startsWith('*') && !t.startsWith('-') && !isSectionHeader(t);
+  }
+
+  function parseSectionWithGroups(sectionTitle) {
+    let content = '';
+    let inGroup = false;
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) { i++; continue; }
+      if (isSectionHeader(t) && t !== sectionTitle) break;
+      i++;
+      if (t.startsWith('*') || t.startsWith('-')) {
+        const item = t.replace(/^[*\-]\s*/, '');
+        if (!inGroup) { content += '<ul class="doc-flat-list">'; inGroup = true; }
+        content += `<li>${flag(item)}</li>`;
+      } else if (isSubHeader(t)) {
+        if (inGroup) { content += '</ul>'; inGroup = false; }
+        content += `<div class="doc-group"><div class="doc-group-title">${t}</div><ul>`;
+        inGroup = true;
+      }
+    }
+    if (inGroup) content += '</ul>' + (content.includes('doc-group-title') ? '</div>' : '');
+    return content;
+  }
+
+  function parseFlatSection() {
+    let items = '';
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) { i++; continue; }
+      if (isSectionHeader(t)) break;
+      i++;
+      if (t.startsWith('*') || t.startsWith('-')) {
+        items += `<li>${flag(t.replace(/^[*\-]\s*/, ''))}</li>`;
+      }
+    }
+    return `<ul class="doc-flat-list">${items}</ul>`;
+  }
+
+  function parseSummary() {
+    let items = '';
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) { i++; continue; }
+      if (isSectionHeader(t)) break;
+      i++;
+      if (t.startsWith('*') || t.startsWith('-')) {
+        items += `<li>${flag(t.replace(/^[*\-]\s*/, ''))}</li>`;
+      }
+    }
+    return `<div class="doc-section"><div class="doc-section-header">Summary of Flagged Findings</div><div class="doc-summary-box"><ul>${items}</ul></div></div>`;
+  }
+
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (!t) { i++; continue; }
+
+    if (/^PATIENT$/i.test(t)) {
+      i++;
+      html += parsePatient();
+    } else if (/^AUTONOMICS\s*\/\//i.test(t)) {
+      i++;
+      html += `<div class="doc-section"><div class="doc-section-header">AUTONOMICS <span class="slashes">//</span></div>`;
+      html += parseSectionWithGroups(t);
+      html += `</div>`;
+    } else if (/^CARDIOVASCULAR\s*\/\//i.test(t)) {
+      i++;
+      html += `<div class="doc-section"><div class="doc-section-header">CARDIOVASCULAR <span class="slashes">//</span></div>`;
+      html += parseFlatSection();
+      html += `</div>`;
+    } else if (/^ELECTROCARDIOGRAM\s*\/\//i.test(t)) {
+      i++;
+      html += `<div class="doc-section"><div class="doc-section-header">ELECTROCARDIOGRAM <span class="slashes">//</span></div>`;
+      let content = '';
+      let inGroup = false;
+      while (i < lines.length) {
+        const tt = lines[i].trim();
+        if (!tt) { i++; continue; }
+        if (isSectionHeader(tt)) break;
+        i++;
+        if (tt.startsWith('*') || tt.startsWith('-')) {
+          const item = tt.replace(/^[*\-]\s*/, '');
+          if (!inGroup) { content += '<div class="doc-group"><ul>'; inGroup = true; }
+          content += `<li>${flag(item)}</li>`;
+        } else {
+          if (inGroup) { content += '</ul></div>'; inGroup = false; }
+          content += `<div class="doc-group"><div class="doc-group-title">${tt}</div><ul>`;
+          inGroup = true;
+        }
+      }
+      if (inGroup) content += '</ul></div>';
+      html += content + `</div>`;
+    } else if (/^Summary of Flagged Findings/i.test(t)) {
+      i++;
+      html += parseSummary();
+    } else {
+      i++;
+    }
+  }
+
+  editor.innerHTML = html || '<div class="placeholder">No content could be extracted. Please check the PDF.</div>';
+}
+
+// ── Actions ──────────────────────────────────────────────────
+
+copyBtn.addEventListener('click', () => {
+  const text = editor.innerText;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.textContent = '✓ Copied!';
+      setTimeout(() => copyBtn.textContent = '📋 Copy to Clipboard', 2200);
+    }).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+});
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    copyBtn.textContent = '✓ Copied!';
+    setTimeout(() => copyBtn.textContent = '📋 Copy to Clipboard', 2200);
+  } catch(e) {
+    copyBtn.textContent = '⚠ Copy failed';
+    setTimeout(() => copyBtn.textContent = '📋 Copy to Clipboard', 2200);
+  }
+  document.body.removeChild(ta);
+}
+
+// PDF — browser print → Save as PDF
+pdfBtn.addEventListener('click', () => {
+  window.print();
+});
+
+// DOCX
+docxBtn.addEventListener('click', () => {
+  if (typeof htmlDocx === 'undefined') {
+    alert('DOCX library not loaded. Please check your internet connection and reload the page.');
+    return;
+  }
+
+  const docStyles = `
+    body { font-family: Calibri, sans-serif; font-size: 11pt; color: #111; margin: 2cm; }
+    .doc-patient { border: 1pt solid #111; padding: 10pt 14pt; margin-bottom: 20pt; }
+    .doc-patient .pr { margin-bottom: 2pt; }
+    .doc-section { margin-bottom: 24pt; }
+    .doc-section-header { font-size: 13pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1pt; border-bottom: 2pt solid #111; padding-bottom: 3pt; margin-bottom: 10pt; }
+    .slashes { color: #aaa; font-weight: normal; }
+    .doc-group { margin-bottom: 10pt; }
+    .doc-group-title { font-weight: bold; margin-bottom: 2pt; }
+    .doc-group ul, .doc-flat-list { list-style: none; padding: 0; margin: 0 0 0 6pt; }
+    .doc-group ul li, .doc-flat-list li { padding: 1pt 0 1pt 12pt; position: relative; }
+    .flag { color: #b03a2e; font-weight: bold; }
+    .doc-summary-box { border: 2pt solid #111; padding: 10pt 14pt; }
+    .doc-summary-box ul { list-style: none; padding: 0; margin: 0 0 0 6pt; }
+    .doc-summary-box ul li { padding: 2pt 0; }
+  `;
+
+  const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${docStyles}</style></head><body>${editor.innerHTML}</body></html>`;
+  const blob = htmlDocx.asBlob(fullHtml);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'VitalScan_Report.docx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  docxBtn.textContent = '✓ Exported!';
+  setTimeout(() => docxBtn.textContent = '📝 Export as DOCX', 2200);
+});
+
+clearBtn.addEventListener('click', () => {
+  editor.innerHTML = '<div class="placeholder">Extracted report will appear here.<br>Upload a VitalScan PDF and click <b>Extract Report</b>.</div>';
+  fileNameEl.textContent = 'No file selected';
+  pdfBase64 = null;
+  pdfInput.value = '';
+  extractBtn.disabled = true;
+  [copyBtn, pdfBtn, docxBtn, clearBtn].forEach(b => b.disabled = true);
+  progWrap.classList.remove('visible');
+});
+</script>
+</body>
+</html>
