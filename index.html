@@ -368,6 +368,24 @@
                     </div>
                 </div>
 
+                <!-- Extracted Report -->
+                <div class="panel">
+                    <div class="panel-header" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                        <span style="display:flex;align-items:center;gap:8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#39d353" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                            Extracted Report
+                        </span>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <select id="extracted-session-select" style="min-width:220px;max-width:360px;font-size:12px;"></select>
+                            <button id="copy-extracted-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">📋 Copy</button>
+                            <button id="download-extracted-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">⬇ TXT</button>
+                        </div>
+                    </div>
+                    <div style="padding:16px;">
+                        <pre id="extracted-report-output" style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px;max-height:360px;overflow:auto;">No extracted report available yet. Upload ANS PDFs and click Extract Reports.</pre>
+                    </div>
+                </div>
+
                 <!-- Clinical Interpretation -->
                 <div class="panel">
                     <div class="panel-header" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -503,6 +521,10 @@
     const exportCsvBtn = document.getElementById('export-csv-btn');
     const statsContent = document.getElementById('stats-content');
     const runStatsBtn = document.getElementById('run-stats-btn');
+    const extractedSessionSelect = document.getElementById('extracted-session-select');
+    const extractedReportOutput = document.getElementById('extracted-report-output');
+    const copyExtractedBtn = document.getElementById('copy-extracted-btn');
+    const downloadExtractedBtn = document.getElementById('download-extracted-btn');
 
     // ---- Markdown ----
     function escapeHtml(v) { return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
@@ -1155,6 +1177,38 @@
         }
     }
 
+    function getSelectedExtractedEntry() {
+        const idx = Number.parseInt(extractedSessionSelect.value, 10);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= uploadedParsedData.length) return null;
+        return uploadedParsedData[idx];
+    }
+
+    function updateExtractedReportPanel() {
+        extractedSessionSelect.innerHTML = '';
+        if (!uploadedParsedData.length) {
+            extractedSessionSelect.disabled = true;
+            copyExtractedBtn.disabled = true;
+            downloadExtractedBtn.disabled = true;
+            extractedReportOutput.textContent = 'No extracted report available yet. Upload ANS PDFs and click Extract Reports.';
+            return;
+        }
+
+        uploadedParsedData.forEach((entry, i) => {
+            const opt = document.createElement('option');
+            const label = (entry.label && entry.label.trim()) ? entry.label.trim() : entry.fileName.replace(/\.pdf$/i, '');
+            opt.value = String(i);
+            opt.textContent = `${i + 1}. ${label}`;
+            extractedSessionSelect.appendChild(opt);
+        });
+
+        extractedSessionSelect.disabled = false;
+        copyExtractedBtn.disabled = false;
+        downloadExtractedBtn.disabled = false;
+        if (extractedSessionSelect.selectedIndex < 0) extractedSessionSelect.selectedIndex = 0;
+        const selected = getSelectedExtractedEntry();
+        extractedReportOutput.textContent = selected?.rawExtractedText || 'Extracted text was empty for this report.';
+    }
+
     runStatsBtn.addEventListener('click', () => {
         const icon = document.getElementById('stats-icon');
         const spin = document.getElementById('stats-loading');
@@ -1204,6 +1258,7 @@
         statsContent.innerHTML='<p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Statistics run automatically after <strong style="color:var(--purple);">Extract Reports</strong>.</p>';
         if(resultsChart){resultsChart.destroy();resultsChart=null;}
         populateRadarMetricSelector();
+        updateExtractedReportPanel();
     });
     processFilesButton.addEventListener('click', processSelectedFiles);
 
@@ -1288,6 +1343,9 @@
                 prependFileListNotices(truncated, ignoredNonPdf);
                 fileListHelper.classList.remove('hidden');
                 fileActionButtons.style.display='flex'; updateFileActionButtonsState();
+                // Immediately render results after successful extraction so users
+                // don't need an extra click to see charts/tables/statistics.
+                processSelectedFiles();
             } else {
                 placeholder.classList.remove('hidden');
                 fileList.innerHTML='<p style="font-size:12px;color:var(--red);">No valid ANS data found.</p>';
@@ -1547,7 +1605,10 @@
                 throw new Error(payload?.error || `ANS extraction failed (HTTP ${response.status})`);
             }
             const parsed = parseAnsExtractedReport(payload?.result, file.name, i);
-            if (parsed && Object.keys(parsed.tests || {}).length) out.push(parsed);
+            if (parsed) {
+                parsed.rawExtractedText = String(payload?.result || '').trim();
+                if (Object.keys(parsed.tests || {}).length || parsed.rawExtractedText) out.push(parsed);
+            }
         }
         return out;
     }
@@ -1583,6 +1644,7 @@
             fileList.appendChild(card);
         });
         updateFileActionButtonsState();
+        updateExtractedReportPanel();
 
         fileList.querySelectorAll('.session-label-input').forEach(inp=>{
             inp.addEventListener('input',e=>{const idx=parseInt(e.target.dataset.index);uploadedParsedData[idx].label=e.target.value;if(!resultsSection.classList.contains('hidden'))displayResults();});
@@ -1614,6 +1676,33 @@
             });
         });
     }
+
+    extractedSessionSelect.addEventListener('change', updateExtractedReportPanel);
+    copyExtractedBtn.addEventListener('click', async () => {
+        const selected = getSelectedExtractedEntry();
+        const text = selected?.rawExtractedText || '';
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            copyExtractedBtn.textContent = '✅ Copied';
+            setTimeout(() => { copyExtractedBtn.textContent = '📋 Copy'; }, 1200);
+        } catch (_err) {
+            copyExtractedBtn.textContent = '❌ Copy failed';
+            setTimeout(() => { copyExtractedBtn.textContent = '📋 Copy'; }, 1400);
+        }
+    });
+    downloadExtractedBtn.addEventListener('click', () => {
+        const selected = getSelectedExtractedEntry();
+        const text = selected?.rawExtractedText || '';
+        if (!text) return;
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const a = document.createElement('a');
+        const baseName = (selected?.fileName || 'ans_report').replace(/\.pdf$/i, '');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${baseName}_extracted.txt`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
 
     function readFileAsPDF(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsArrayBuffer(file);});}
 
