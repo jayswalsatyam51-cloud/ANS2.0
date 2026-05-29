@@ -178,6 +178,39 @@
             transform: scale(0.985);
             transition: opacity 0.22s ease, transform 0.22s ease;
         }
+        #chart-zoom-viewport { border-radius: 8px; }
+        #chart-zoom-viewport.radar-zoom-active {
+            overflow: auto;
+            max-height: min(72vh, 680px);
+            border: 1px solid var(--border2);
+            background: var(--bg);
+        }
+        #radar-zoom-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+            padding: 8px 10px;
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            border-radius: 8px;
+        }
+        #radar-zoom-toolbar input[type="range"] {
+            flex: 1;
+            min-width: 120px;
+            max-width: 220px;
+            accent-color: var(--accent);
+            padding: 0;
+            height: 4px;
+        }
+        #radar-zoom-label {
+            font-size: 11px;
+            font-family: 'IBM Plex Mono', monospace;
+            color: var(--text2);
+            min-width: 42px;
+            text-align: center;
+        }
 
         /* Label */
         label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 5px; font-weight: 500; }
@@ -340,10 +373,21 @@
                             <button type="button" id="chart-line-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">Line</button>
                             <button type="button" id="chart-bar-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">Bar</button>
                         </div>
-                        <div id="chart-container" style="position:relative;height:340px;"><canvas id="results-chart"></canvas></div>
+                        <div id="radar-zoom-toolbar" class="hidden">
+                            <span style="font-size:11px;color:var(--text3);">Zoom</span>
+                            <button type="button" id="radar-zoom-out" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;min-width:32px;" title="Zoom out">−</button>
+                            <input type="range" id="radar-zoom-slider" min="85" max="225" value="100" step="5" aria-label="Radar chart zoom">
+                            <span id="radar-zoom-label">100%</span>
+                            <button type="button" id="radar-zoom-in" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;min-width:32px;" title="Zoom in">+</button>
+                            <button type="button" id="radar-zoom-reset" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">Reset</button>
+                            <span style="font-size:10px;color:var(--text3);margin-left:auto;">Ctrl + scroll · pinch on trackpad</span>
+                        </div>
+                        <div id="chart-zoom-viewport">
+                            <div id="chart-container" style="position:relative;height:340px;"><canvas id="results-chart"></canvas></div>
+                        </div>
                         <p id="line-chart-hint" class="hidden" style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;font-style:italic;">Click a point or bar to add a comment annotation.</p>
                         <div id="birdsEye-container" class="hidden"></div>
-                        <p id="radar-disclaimer" class="hidden" style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;font-style:italic;">Values normalized 0–100. "100" = best. Tooltips show original values.</p>
+                        <p id="radar-disclaimer" class="hidden" style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;font-style:italic;">Values normalized 0–100. "100" = best. Tooltips show original values. Use zoom to read axis labels.</p>
                     </div>
                 </div>
 
@@ -453,6 +497,11 @@
     let metricChartStyle = 'line';
     let lastInterpretationRaw = '';
     let interpretationEditMode = false;
+    let radarZoom = 1;
+    let lastRadarLabels = [];
+    const RADAR_ZOOM_MIN = 0.85;
+    const RADAR_ZOOM_MAX = 2.25;
+    const RADAR_ZOOM_STEP = 0.1;
 
     const RADAR_KEY_METRICS = {
         'Stability Score': 'high',
@@ -463,6 +512,56 @@
         'Adaptation Ratio': 'high',
         'Directionality': 'low'
     };
+
+    const RADAR_LABEL_SHORT = {
+        'Stability Score': 'Stability',
+        'Sway Path Length': 'Sway Path',
+        'Sway Velocity (Ave)': 'Sway Velocity',
+        'Area 95% Conf. Ellipse': 'Area 95% Ell.',
+        'Fatigue Ratio': 'Fatigue',
+        'Adaptation Ratio': 'Adaptation',
+        'Directionality': 'Direction'
+    };
+
+    function getRadarChartLayout(labels, zoom = 1) {
+        const z = Math.max(RADAR_ZOOM_MIN, Math.min(RADAR_ZOOM_MAX, zoom));
+        const n = Math.max(labels.length, 1);
+        const maxLen = labels.reduce((m, l) => Math.max(m, String(l).length), 0);
+        const baseFont = Math.max(9, Math.min(12, Math.round(13 - n * 0.35 - maxLen * 0.08)));
+        const baseLayoutPad = Math.min(56, Math.max(28, 18 + maxLen * 0.9 + n * 3));
+        const basePointPad = Math.min(28, Math.max(12, 8 + maxLen * 0.25 + n * 1.5));
+        const baseHeight = Math.min(560, Math.max(400, 320 + n * 26 + Math.max(0, maxLen - 12) * 3));
+        const baseMaxChars = Math.max(10, Math.min(16, Math.round(22 - n * 1.2)));
+        const useFullLabels = z >= 1.35;
+        return {
+            zoom: z,
+            useFullLabels,
+            fontSize: Math.min(15, Math.round(baseFont * z)),
+            layoutPad: Math.min(96, Math.round(baseLayoutPad * z)),
+            pointPad: Math.min(48, Math.round(basePointPad * z)),
+            height: Math.min(960, Math.round(baseHeight * z)),
+            maxCharsPerLine: useFullLabels ? Math.round(baseMaxChars * z * 1.4) : baseMaxChars
+        };
+    }
+
+    function shortenRadarAxisLabel(label) {
+        return RADAR_LABEL_SHORT[label] || label;
+    }
+
+    function wrapRadarAxisLabel(label, maxCharsPerLine, useFullLabels = false) {
+        const text = useFullLabels ? label : shortenRadarAxisLabel(label);
+        if (text.length <= maxCharsPerLine) return text;
+        const words = text.split(/\s+/);
+        let line1 = '';
+        let line2 = '';
+        for (const word of words) {
+            const candidate = line1 ? `${line1} ${word}` : word;
+            if (!line2 && candidate.length <= maxCharsPerLine) line1 = candidate;
+            else line2 = line2 ? `${line2} ${word}` : word;
+        }
+        if (!line2) return text;
+        return [line1, line2];
+    }
 
     const TEST_ORDER = ['NSEO', 'NSEC', 'PSEO', 'PSEC'];
 
@@ -517,6 +616,13 @@
     const resultsSection = document.getElementById('results-section');
     const chartCanvas = document.getElementById('results-chart');
     const chartContainer = document.getElementById('chart-container');
+    const chartZoomViewport = document.getElementById('chart-zoom-viewport');
+    const radarZoomToolbar = document.getElementById('radar-zoom-toolbar');
+    const radarZoomSlider = document.getElementById('radar-zoom-slider');
+    const radarZoomLabel = document.getElementById('radar-zoom-label');
+    const radarZoomInBtn = document.getElementById('radar-zoom-in');
+    const radarZoomOutBtn = document.getElementById('radar-zoom-out');
+    const radarZoomResetBtn = document.getElementById('radar-zoom-reset');
     const birdsEyeContainer = document.getElementById('birdsEye-container');
     const radarDisclaimer = document.getElementById('radar-disclaimer');
     const summaryTableContainer = document.getElementById('summary-table-container');
@@ -1298,6 +1404,7 @@
         statisticsShown = false;
         uploadedParsedData=[]; allParsedData=[]; allMetrics=new Set(); allTestConditions=new Set();
         pointAnnotations={}; currentView='metric'; analysisModeSelect.value='metric';
+        radarZoom=1; lastRadarLabels=[]; syncRadarZoomUi(); setRadarZoomToolbarVisible(false);
         fileInput.value=''; fileList.innerHTML='';
         controlsSection.classList.add('hidden');
         radarControls.classList.add('hidden');
@@ -1327,10 +1434,49 @@
         currentView=e.target.value;
         radarControls.classList.toggle('hidden', currentView!=='radar');
         radarDisclaimer.classList.toggle('hidden', currentView!=='radar');
+        setRadarZoomToolbarVisible(currentView==='radar');
         document.getElementById('line-chart-hint')?.classList.toggle('hidden', currentView!=='metric');
+        if (currentView !== 'radar') {
+            radarZoom = 1;
+            syncRadarZoomUi();
+        }
         if(currentView==='radar') populateRadarMetricSelector();
         displayResults();
     });
+
+    radarZoomInBtn?.addEventListener('click', () => setRadarZoom(radarZoom + RADAR_ZOOM_STEP));
+    radarZoomOutBtn?.addEventListener('click', () => setRadarZoom(radarZoom - RADAR_ZOOM_STEP));
+    radarZoomResetBtn?.addEventListener('click', () => setRadarZoom(1));
+    radarZoomSlider?.addEventListener('input', (e) => setRadarZoom(Number(e.target.value) / 100));
+    chartZoomViewport?.addEventListener('wheel', (e) => {
+        if (currentView !== 'radar') return;
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        setRadarZoom(radarZoom + (e.deltaY > 0 ? -RADAR_ZOOM_STEP : RADAR_ZOOM_STEP));
+    }, { passive: false });
+
+    let radarPinchStartDist = 0;
+    let radarPinchStartZoom = 1;
+    chartZoomViewport?.addEventListener('touchstart', (e) => {
+        if (currentView !== 'radar' || e.touches.length !== 2) return;
+        radarPinchStartDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+        radarPinchStartZoom = radarZoom;
+    }, { passive: true });
+    chartZoomViewport?.addEventListener('touchmove', (e) => {
+        if (currentView !== 'radar' || e.touches.length !== 2 || !radarPinchStartDist) return;
+        e.preventDefault();
+        const dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+        const ratio = dist / radarPinchStartDist;
+        setRadarZoom(radarPinchStartZoom * ratio);
+    }, { passive: false });
+    chartZoomViewport?.addEventListener('touchend', () => { radarPinchStartDist = 0; });
+
     metricSelect.addEventListener('change', displayResults);
     testSelect.addEventListener('change', () => { populateMetricSelect(); populateRadarMetricSelector(); displayResults(); });
 
@@ -1968,6 +2114,7 @@
         chartContainer.classList.remove('hidden'); birdsEyeContainer.classList.add('hidden');
         exportPngBtn.classList.remove('hidden');
         radarDisclaimer.classList.toggle('hidden',currentView!=='radar');
+        setRadarZoomToolbarVisible(currentView==='radar');
         document.getElementById('line-chart-hint')?.classList.toggle('hidden',currentView!=='metric');
         chartTypeWrap.classList.toggle('hidden',currentView!=='metric');
         syncChartTypeButtons();
@@ -2176,8 +2323,56 @@
         syncChartTypeButtons();
     }
 
+    function syncRadarZoomUi() {
+        const pct = Math.round(radarZoom * 100);
+        if (radarZoomSlider) radarZoomSlider.value = String(pct);
+        if (radarZoomLabel) radarZoomLabel.textContent = `${pct}%`;
+    }
+
+    function setRadarZoomToolbarVisible(visible) {
+        radarZoomToolbar?.classList.toggle('hidden', !visible);
+        chartZoomViewport?.classList.toggle('radar-zoom-active', visible);
+    }
+
+    function applyRadarChartLayout(layout) {
+        chartContainer.style.height = `${layout.height}px`;
+        chartContainer.style.minWidth = `${layout.height}px`;
+        chartContainer.style.margin = '0 auto';
+    }
+
+    function updateRadarChartZoom() {
+        if (!resultsChart || !lastRadarLabels.length) return;
+        const layout = getRadarChartLayout(lastRadarLabels, radarZoom);
+        applyRadarChartLayout(layout);
+        const rScale = resultsChart.options.scales.r;
+        rScale.pointLabels.padding = layout.pointPad;
+        rScale.pointLabels.font.size = layout.fontSize;
+        rScale.pointLabels.callback = (label) => wrapRadarAxisLabel(label, layout.maxCharsPerLine, layout.useFullLabels);
+        resultsChart.options.layout.padding = layout.layoutPad;
+        resultsChart.resize();
+        resultsChart.update('none');
+        syncRadarZoomUi();
+    }
+
+    function setRadarZoom(z, { redraw = true } = {}) {
+        radarZoom = Math.max(RADAR_ZOOM_MIN, Math.min(RADAR_ZOOM_MAX, z));
+        syncRadarZoomUi();
+        if (currentView !== 'radar') return;
+        if (redraw && resultsChart && lastRadarLabels.length) updateRadarChartZoom();
+    }
+
     function updateChart(analysis){
         chartContainer.classList.add('chart-loading');
+        if (analysis.type === 'radar') {
+            const radarLabels = analysis.chartData?.labels || [];
+            lastRadarLabels = radarLabels;
+            applyRadarChartLayout(getRadarChartLayout(radarLabels, radarZoom));
+        } else {
+            lastRadarLabels = [];
+            chartContainer.style.height = '340px';
+            chartContainer.style.minWidth = '';
+            chartContainer.style.margin = '';
+        }
         destroyChart();
         const ctx=chartCanvas.getContext('2d');
         if(analysis.type==='line'){
@@ -2283,17 +2478,49 @@
         } else if(analysis.type==='radar'){
             if(!analysis.chartData.labels?.length){chartContainer.classList.remove('chart-loading');updateMetricChartToolbarState();return;}
             const radarTitle=analysis.displayTestName||formatTestNameForDisplay(analysis.test);
+            const radarLabels=analysis.chartData.labels;
+            const radarLayout=getRadarChartLayout(radarLabels, radarZoom);
             resultsChart=new Chart(ctx,{type:'radar',data:analysis.chartData,options:{
                 responsive:true,maintainAspectRatio:false,
+                devicePixelRatio:Math.min(window.devicePixelRatio||1,2),
+                layout:{padding:radarLayout.layoutPad},
                 animation:{
                     duration:900,
                     easing:'easeOutQuart',
                     onComplete:()=>chartContainer.classList.remove('chart-loading')
                 },
-                elements:{line:{tension:0.1}},
-                scales:{r:{beginAtZero:true,min:0,max:100,pointLabels:{font:{size:11},color:'#8b949e'},ticks:{display:false,stepSize:25},angleLines:{color:'rgba(48,54,61,0.8)'},grid:{color:'rgba(48,54,61,0.6)'}}},
-                plugins:{title:{display:true,text:`Profile: ${radarTitle}`,font:{size:14,weight:'600'},color:'#e6edf3'},legend:{labels:{color:'#8b949e',font:{size:11}}},tooltip:{backgroundColor:'#1c2330',borderColor:'#30363d',borderWidth:1,titleColor:'#e6edf3',bodyColor:'#8b949e',callbacks:{label:ctx=>{const orig=ctx.dataset.originalData[ctx.dataIndex];return`${ctx.dataset.label}: ${orig!==undefined?orig.toFixed(3):'N/A'} (${ctx.parsed.r.toFixed(1)})`;}}}}}
-            });
+                elements:{line:{tension:0.1},point:{radius:3,hoverRadius:5}},
+                scales:{r:{
+                    beginAtZero:true,min:0,max:100,
+                    pointLabels:{
+                        padding:radarLayout.pointPad,
+                        lineHeight:1.25,
+                        color:'#8b949e',
+                        font:{size:radarLayout.fontSize,family:'IBM Plex Sans, sans-serif'},
+                        callback:(label)=>wrapRadarAxisLabel(label,radarLayout.maxCharsPerLine,radarLayout.useFullLabels)
+                    },
+                    ticks:{display:false,stepSize:25},
+                    angleLines:{color:'rgba(48,54,61,0.8)'},
+                    grid:{color:'rgba(48,54,61,0.6)'}
+                }},
+                plugins:{
+                    datalabels:{display:false},
+                    title:{display:true,text:`Profile: ${radarTitle}`,font:{size:14,weight:'600'},color:'#e6edf3'},
+                    legend:{labels:{color:'#8b949e',font:{size:11}}},
+                    tooltip:{
+                        backgroundColor:'#1c2330',borderColor:'#30363d',borderWidth:1,
+                        titleColor:'#e6edf3',bodyColor:'#8b949e',
+                        callbacks:{
+                            title:(items)=>items[0]?.label||'',
+                            label:ctx=>{
+                                const orig=ctx.dataset.originalData[ctx.dataIndex];
+                                return`${ctx.dataset.label}: ${orig!==undefined?orig.toFixed(3):'N/A'} (${ctx.parsed.r.toFixed(1)})`;
+                            }
+                        }
+                    }
+                }
+            }});
+            syncRadarZoomUi();
             updateMetricChartToolbarState();
         }
     }
