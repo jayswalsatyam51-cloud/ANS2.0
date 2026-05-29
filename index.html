@@ -237,9 +237,10 @@
                     </div>
                     <p id="file-list-helper" class="hidden" style="font-size:11px;color:var(--text3);margin-top:10px;">Select PDFs, drag to reorder sessions.</p>
                     <div id="file-list" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
-                    <div id="file-action-buttons" class="hidden" style="display:none; gap:8px; margin-top:12px; flex-direction:row;">
-                        <button id="process-files-button" class="btn btn-green" style="flex:1;">Extract Reports</button>
-                        <button id="reset-button" class="btn btn-red" style="flex:1;">Reset</button>
+                    <div id="file-action-buttons" class="hidden" style="display:none; gap:8px; margin-top:12px; flex-direction:column;">
+                        <button id="process-files-button" class="btn btn-green" style="width:100%;">Extract Reports</button>
+                        <button id="show-statistics-btn" class="btn btn-purple" style="width:100%;" disabled>Show Statistics</button>
+                        <button id="reset-button" class="btn btn-red" style="width:100%;">Reset</button>
                     </div>
                 </div>
             </div>
@@ -294,11 +295,32 @@
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <p style="font-size:13px;color:var(--text3);">Extracting ANS reports…</p>
+                <p id="loading-status" style="font-size:13px;color:var(--text3);">Extracting ANS reports…</p>
+                <p style="font-size:11px;color:var(--text3);margin-top:6px;">Large PDFs are processed one at a time to avoid API rate limits.</p>
             </div>
 
             <!-- Results -->
             <div id="results-section" class="hidden" style="display:flex;flex-direction:column;gap:16px;">
+
+                <!-- Extracted Report (shown first after extraction) -->
+                <div class="panel" id="extracted-report-section">
+                    <div class="panel-header" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                        <span style="display:flex;align-items:center;gap:8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#39d353" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                            Extracted Report
+                        </span>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <select id="extracted-session-select" style="min-width:220px;max-width:360px;font-size:12px;"></select>
+                            <button id="copy-extracted-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">📋 Copy</button>
+                            <button id="download-extracted-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">⬇ TXT</button>
+                        </div>
+                    </div>
+                    <div style="padding:16px;">
+                        <pre id="extracted-report-output" style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px;max-height:420px;overflow:auto;">No extracted report available yet. Upload ANS PDFs and click Extract Reports.</pre>
+                    </div>
+                </div>
+
+                <div id="analysis-section" class="hidden" style="display:flex;flex-direction:column;gap:16px;">
 
                 <!-- Visualization -->
                 <div class="panel">
@@ -353,7 +375,7 @@
                     </div>
 
                     <div style="padding:14px;" id="stats-content">
-                        <p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Statistics run automatically after <strong style="color:var(--purple);">Extract Reports</strong>.</p>
+                        <p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Click <strong style="color:var(--purple);">Show Statistics</strong> in the sidebar to compute diagnostics.</p>
                     </div>
                 </div>
 
@@ -365,24 +387,6 @@
                     </div>
                     <div style="padding:16px;">
                         <div id="summary-table-container" style="overflow-x:auto;max-height:340px;overflow-y:auto;"></div>
-                    </div>
-                </div>
-
-                <!-- Extracted Report -->
-                <div class="panel">
-                    <div class="panel-header" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-                        <span style="display:flex;align-items:center;gap:8px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#39d353" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-                            Extracted Report
-                        </span>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <select id="extracted-session-select" style="min-width:220px;max-width:360px;font-size:12px;"></select>
-                            <button id="copy-extracted-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">📋 Copy</button>
-                            <button id="download-extracted-btn" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">⬇ TXT</button>
-                        </div>
-                    </div>
-                    <div style="padding:16px;">
-                        <pre id="extracted-report-output" style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:var(--text2);background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px;max-height:360px;overflow:auto;">No extracted report available yet. Upload ANS PDFs and click Extract Reports.</pre>
                     </div>
                 </div>
 
@@ -420,6 +424,8 @@
                         </div>
                     </div>
                 </div>
+
+                </div><!-- /analysis-section -->
             </div>
         </div>
     </div>
@@ -430,9 +436,13 @@
     const AI_REQUEST_DEFAULTS = { maxTokens: 3000 };
     const ANS_EXTRACT_ENDPOINT = '/api/extract';
     const MAX_UPLOAD_FILES = 10;
+    const EXTRACT_MIN_GAP_MS = 55000;
+    const EXTRACT_MAX_RETRIES = 4;
 
     let allParsedData = [];
     let uploadedParsedData = [];
+    let stagedPdfFiles = [];
+    let statisticsShown = false;
     let draggedFileIndex = null;
     let pointAnnotations = {};
     let allMetrics = new Set();
@@ -492,7 +502,10 @@
     const fileList = document.getElementById('file-list');
     const fileActionButtons = document.getElementById('file-action-buttons');
     const processFilesButton = document.getElementById('process-files-button');
+    const showStatisticsBtn = document.getElementById('show-statistics-btn');
     const resetButton = document.getElementById('reset-button');
+    const loadingStatus = document.getElementById('loading-status');
+    const analysisSection = document.getElementById('analysis-section');
     const controlsSection = document.getElementById('controls-section');
     const analysisModeSelect = document.getElementById('analysis-mode-select');
     const metricSelect = document.getElementById('metric-select');
@@ -1240,7 +1253,49 @@
     });
     fileInput.addEventListener('change', () => handleFiles(fileInput.files));
 
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+    function setLoadingStatus(text) {
+        if (loadingStatus) loadingStatus.textContent = text;
+    }
+
+    function hideAnalysisPanels() {
+        statisticsShown = false;
+        analysisSection.classList.add('hidden');
+        controlsSection.classList.add('hidden');
+        if (showStatisticsBtn) showStatisticsBtn.disabled = !uploadedParsedData.length;
+    }
+
+    function showExtractionResultsOnly() {
+        placeholder.classList.add('hidden');
+        loading.classList.add('hidden');
+        resultsSection.classList.remove('hidden');
+        hideAnalysisPanels();
+        updateExtractedReportPanel();
+        if (showStatisticsBtn) showStatisticsBtn.disabled = uploadedParsedData.length === 0;
+    }
+
+    function showStatisticsAnalysis() {
+        if (!uploadedParsedData.length) return;
+        statisticsShown = true;
+        analysisSection.classList.remove('hidden');
+        rebuildAnalysisStateFromSelection();
+        if (!allParsedData.length) {
+            statsContent.innerHTML = '<p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">No numeric metrics found for statistics. Review extracted report text above.</p>';
+            return;
+        }
+        populateTestSelect();
+        populateMetricSelect();
+        populateRadarMetricSelector();
+        displayResults();
+        runDiagnosticsImmediately();
+        showStatisticsBtn.disabled = true;
+        showStatisticsBtn.textContent = 'Statistics Loaded';
+    }
+
     resetButton.addEventListener('click', () => {
+        stagedPdfFiles = [];
+        statisticsShown = false;
         uploadedParsedData=[]; allParsedData=[]; allMetrics=new Set(); allTestConditions=new Set();
         pointAnnotations={}; currentView='metric'; analysisModeSelect.value='metric';
         fileInput.value=''; fileList.innerHTML='';
@@ -1255,12 +1310,18 @@
         execSummaryBtn.disabled=false;
         fullReportBtn.disabled=false;
         statsContent.dataset.computed='';
-        statsContent.innerHTML='<p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Statistics run automatically after <strong style="color:var(--purple);">Extract Reports</strong>.</p>';
+        statsContent.innerHTML='<p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Click <strong style="color:var(--purple);">Show Statistics</strong> in the sidebar to compute diagnostics.</p>';
         if(resultsChart){resultsChart.destroy();resultsChart=null;}
         populateRadarMetricSelector();
         updateExtractedReportPanel();
+        hideAnalysisPanels();
+        if (showStatisticsBtn) {
+            showStatisticsBtn.disabled = true;
+            showStatisticsBtn.textContent = 'Show Statistics';
+        }
     });
-    processFilesButton.addEventListener('click', processSelectedFiles);
+    processFilesButton.addEventListener('click', extractSelectedReports);
+    showStatisticsBtn.addEventListener('click', showStatisticsAnalysis);
 
     analysisModeSelect.addEventListener('change', e => {
         currentView=e.target.value;
@@ -1291,15 +1352,52 @@
         });
     }
 
-    function processSelectedFiles() {
-        rebuildAnalysisStateFromSelection();
-        if(!allParsedData.length){
-            controlsSection.classList.add('hidden'); resultsSection.classList.add('hidden'); placeholder.classList.remove('hidden');
+    async function extractSelectedReports() {
+        const filesToExtract = stagedPdfFiles.length
+            ? stagedPdfFiles
+            : uploadedParsedData.filter(d => d.selected !== false && d._pendingFile).map(d => d._pendingFile);
+
+        if (!filesToExtract.length) {
+            fileList.innerHTML = '<p style="font-size:12px;color:var(--red);">Select at least one PDF to extract.</p>';
             return;
         }
-        populateTestSelect(); populateMetricSelect(); populateRadarMetricSelector();
-        displayResults();
-        runDiagnosticsImmediately();
+
+        processFilesButton.disabled = true;
+        showStatisticsBtn.disabled = true;
+        placeholder.classList.add('hidden');
+        loading.classList.remove('hidden');
+        resultsSection.classList.add('hidden');
+        hideAnalysisPanels();
+
+        try {
+            setLoadingStatus(`Extracting 1 of ${filesToExtract.length}…`);
+            const results = await uploadAndParseAnsFiles(filesToExtract);
+            uploadedParsedData = [];
+            results.forEach(p => {
+                if (!p) return;
+                p.selected = true;
+                p.label = p.label || p.fileName.replace(/\.pdf$/i, '');
+                uploadedParsedData.push(p);
+            });
+
+            if (uploadedParsedData.length > 0) {
+                uploadedParsedData.sort((a, b) => a.date - b.date);
+                stagedPdfFiles = [];
+                buildFileList();
+                showExtractionResultsOnly();
+            } else {
+                placeholder.classList.remove('hidden');
+                fileList.innerHTML = '<p style="font-size:12px;color:var(--red);">No valid ANS data found in extracted output.</p>';
+            }
+        } catch (err) {
+            console.error(err);
+            placeholder.classList.remove('hidden');
+            fileList.innerHTML = `<p style="font-size:12px;color:var(--red);">Error: ${escapeHtml(err.message)}</p>`;
+        } finally {
+            loading.classList.add('hidden');
+            processFilesButton.disabled = false;
+            updateFileActionButtonsState();
+        }
     }
 
     function filterPdfFilesForUpload(fileList) {
@@ -1331,30 +1429,36 @@
             fileListHelper.classList.remove('hidden');
             return;
         }
-        placeholder.classList.add('hidden'); loading.classList.remove('hidden');
-        resultsSection.classList.add('hidden'); uploadedParsedData=[]; allParsedData=[]; allMetrics=new Set(); allTestConditions=new Set();
-        fileList.innerHTML='';
-        try {
-            const results = await uploadAndParseAnsFiles(pdfFiles);
-            results.forEach(p=>{if(p){p.selected=true;p.label=p.fileName.replace(/\.pdf$/i,'');uploadedParsedData.push(p);}});
-            if(uploadedParsedData.length>0){
-                uploadedParsedData.sort((a,b)=>a.date-b.date);
-                buildFileList();
-                prependFileListNotices(truncated, ignoredNonPdf);
-                fileListHelper.classList.remove('hidden');
-                fileActionButtons.style.display='flex'; updateFileActionButtonsState();
-                // Immediately render results after successful extraction so users
-                // don't need an extra click to see charts/tables/statistics.
-                processSelectedFiles();
-            } else {
-                placeholder.classList.remove('hidden');
-                fileList.innerHTML='<p style="font-size:12px;color:var(--red);">No valid ANS data found.</p>';
-            }
-        } catch(err) {
-            console.error(err);
-            fileList.innerHTML=`<p style="font-size:12px;color:var(--red);">Error: ${err.message}</p>`;
-            placeholder.classList.remove('hidden');
-        } finally { loading.classList.add('hidden'); }
+
+        stagedPdfFiles = pdfFiles;
+        statisticsShown = false;
+        uploadedParsedData = pdfFiles.map((f, i) => ({
+            fileName: f.name,
+            label: f.name.replace(/\.pdf$/i, ''),
+            selected: true,
+            date: new Date(Date.now() + i),
+            tests: {},
+            _pendingFile: f,
+            pending: true
+        }));
+        allParsedData = [];
+        allMetrics = new Set();
+        allTestConditions = new Set();
+
+        placeholder.classList.remove('hidden');
+        loading.classList.add('hidden');
+        resultsSection.classList.add('hidden');
+        hideAnalysisPanels();
+        fileList.innerHTML = '';
+        buildFileList();
+        prependFileListNotices(truncated, ignoredNonPdf);
+        fileListHelper.classList.remove('hidden');
+        fileActionButtons.style.display = 'flex';
+        updateFileActionButtonsState();
+        if (showStatisticsBtn) {
+            showStatisticsBtn.disabled = true;
+            showStatisticsBtn.textContent = 'Show Statistics';
+        }
     }
 
     function unwrapVngPayload(payload) {
@@ -1587,13 +1691,18 @@
         return { fileName, label: fileName.replace(/\.pdf$/i,''), date: new Date(Date.now() + idx), tests };
     }
 
-    async function uploadAndParseAnsFiles(files) {
-        const out = [];
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const dataUrl = await readFileAsDataUrl(file);
-            const base64 = String(dataUrl).split(',')[1];
-            if (!base64) continue;
+    function isRateLimitMessage(msg) {
+        return /rate limit|tokens per minute|429/i.test(String(msg || ''));
+    }
+
+    async function extractOnePdf(file, index, total) {
+        const dataUrl = await readFileAsDataUrl(file);
+        const base64 = String(dataUrl).split(',')[1];
+        if (!base64) throw new Error(`Could not read PDF: ${file.name}`);
+
+        let lastError = null;
+        for (let attempt = 0; attempt < EXTRACT_MAX_RETRIES; attempt++) {
+            setLoadingStatus(`Extracting ${index + 1} of ${total}: ${file.name}${attempt ? ` (retry ${attempt + 1})` : ''}…`);
 
             const response = await fetch(ANS_EXTRACT_ENDPOINT, {
                 method: 'POST',
@@ -1601,13 +1710,42 @@
                 body: JSON.stringify({ pdfBase64: base64 })
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.error) {
-                throw new Error(payload?.error || `ANS extraction failed (HTTP ${response.status})`);
+            const errMsg = payload?.error || '';
+
+            if (response.status === 429 || isRateLimitMessage(errMsg)) {
+                const waitSec = Number(payload?.retryAfterSeconds) || 60;
+                const waitMs = waitSec * 1000 * (attempt + 1);
+                setLoadingStatus(`Rate limit reached. Waiting ${Math.ceil(waitMs / 1000)}s before retrying ${file.name}…`);
+                await sleep(waitMs);
+                lastError = new Error(errMsg || 'API rate limit reached. Please wait and try again.');
+                continue;
             }
-            const parsed = parseAnsExtractedReport(payload?.result, file.name, i);
+
+            if (!response.ok || errMsg) {
+                throw new Error(errMsg || `ANS extraction failed (HTTP ${response.status})`);
+            }
+
+            const parsed = parseAnsExtractedReport(payload?.result, file.name, index);
             if (parsed) {
                 parsed.rawExtractedText = String(payload?.result || '').trim();
-                if (Object.keys(parsed.tests || {}).length || parsed.rawExtractedText) out.push(parsed);
+                return parsed;
+            }
+            return null;
+        }
+
+        throw lastError || new Error(`Failed to extract ${file.name} after retries.`);
+    }
+
+    async function uploadAndParseAnsFiles(files) {
+        const out = [];
+        for (let i = 0; i < files.length; i++) {
+            if (i > 0) {
+                setLoadingStatus(`Waiting ${Math.round(EXTRACT_MIN_GAP_MS / 1000)}s before next PDF (rate-limit protection)…`);
+                await sleep(EXTRACT_MIN_GAP_MS);
+            }
+            const parsed = await extractOnePdf(files[i], i, files.length);
+            if (parsed && (Object.keys(parsed.tests || {}).length || parsed.rawExtractedText)) {
+                out.push(parsed);
             }
         }
         return out;
@@ -1621,12 +1759,15 @@
             card.className=`file-card rounded-lg ${d.selected!==false?'selected':''}`;
             card.style.cssText='padding:10px;border-radius:8px;';
             card.draggable=true; card.dataset.index=String(i);
+            const statusBadge = d.pending
+                ? '<span style="font-size:10px;color:var(--orange);">ready to extract</span>'
+                : '<span style="font-size:10px;color:var(--green);">extracted</span>';
             card.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <div style="display:flex;align-items:center;gap:6px;min-width:0;">
                     <span style="cursor:grab;color:var(--text3);font-size:13px;" title="Drag to reorder">⋮⋮</span>
                     <span style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px;">${escapeHtml(d.fileName)}</span>
                 </div>
-                <span style="font-size:10px;color:var(--text3);">${d.date instanceof Date&&!isNaN(d.date)?d.date.toLocaleDateString():''}</span>
+                ${statusBadge}
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
                 <input type="checkbox" ${d.selected!==false?'checked':''} data-index="${i}" class="session-select-checkbox">
@@ -1821,6 +1962,7 @@
 
     // ---- Display dispatcher ----
     function displayResults(){
+        if (!statisticsShown) return;
         controlsSection.classList.remove('hidden'); resultsSection.classList.remove('hidden');
         placeholder.classList.add('hidden'); loading.classList.add('hidden');
         chartContainer.classList.remove('hidden'); birdsEyeContainer.classList.add('hidden');
@@ -1841,7 +1983,7 @@
         }
         // Reset stats panel
         statsContent.dataset.computed='';
-        statsContent.innerHTML='<p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Statistics run automatically after <strong style="color:var(--purple);">Extract Reports</strong>.</p>';
+        statsContent.innerHTML='<p style="font-size:12px;color:var(--text3);text-align:center;padding:20px 0;">Click <strong style="color:var(--purple);">Show Statistics</strong> in the sidebar to compute diagnostics.</p>';
         interpretationOutput.innerHTML='Click a button to generate an AI-powered clinical interpretation.';
         lastInterpretationRaw='';
         leaveInterpretationEditView();

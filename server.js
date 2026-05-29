@@ -26,6 +26,15 @@ app.get('/', (_req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+function isRateLimitError(message) {
+  return /rate limit|tokens per minute|429/i.test(String(message || ''));
+}
+
+function parseRetryAfterSeconds(message) {
+  const match = String(message || '').match(/retry[- ]after[^0-9]*(\d+)/i);
+  return match ? Number.parseInt(match[1], 10) : 60;
+}
+
 app.post('/api/extract', async (req, res) => {
   const { pdfBase64 } = req.body;
   if (!pdfBase64) return res.status(400).json({ error: 'No PDF data provided' });
@@ -203,7 +212,7 @@ RULES:
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 4096,
+          max_tokens: 2048,
           messages: [{
             role: 'user',
             content: [
@@ -225,12 +234,32 @@ RULES:
     try {
       data = JSON.parse(raw);
     } catch (e) {
+      if (response.status === 429) {
+        return res.status(429).json({
+          error: 'API rate limit reached. Please wait about 60 seconds and try again.',
+          retryAfterSeconds: 60,
+        });
+      }
       return res.status(500).json({ error: 'API returned non-JSON: ' + raw.slice(0, 200) });
+    }
+
+    if (response.status === 429) {
+      const msg = data?.error?.message || raw.slice(0, 300);
+      return res.status(429).json({
+        error: msg,
+        retryAfterSeconds: parseRetryAfterSeconds(msg),
+      });
     }
 
     if (data.error) {
       const msg = typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error;
       console.error('[extract] API error:', msg);
+      if (response.status === 429 || isRateLimitError(msg)) {
+        return res.status(429).json({
+          error: msg,
+          retryAfterSeconds: parseRetryAfterSeconds(msg),
+        });
+      }
       return res.status(500).json({ error: msg });
     }
 
@@ -247,6 +276,12 @@ RULES:
     console.error('[extract] Caught error:', err.name, err.message);
     if (err.name === 'AbortError') {
       return res.status(504).json({ error: 'Request timed out after 2 minutes. Try a smaller PDF.' });
+    }
+    if (isRateLimitError(err.message)) {
+      return res.status(429).json({
+        error: err.message,
+        retryAfterSeconds: parseRetryAfterSeconds(err.message),
+      });
     }
     res.status(500).json({ error: err.message });
   }
