@@ -2705,7 +2705,11 @@ Structure the response with short titled sections:
         try {
             response=await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_tokens:AI_REQUEST_DEFAULTS.maxTokens,system:systemPrompt,messages:[{role:'user',content:userMessage}]})});
         } catch(ne){throw new Error(`Network error: ${ne.message}`);}
-        if(!response.ok){const p=await response.json().catch(()=>({}));throw new Error(p?.error?.message||`HTTP ${response.status}`);}
+        if(!response.ok){
+            const p=await response.json().catch(()=>({}));
+            const errMsg=typeof p?.error==='string'?p.error:(p?.error?.message||`HTTP ${response.status}`);
+            throw new Error(errMsg);
+        }
         const result=await response.json();
         if(result.content?.[0]?.text)return result.content[0].text;
         throw new Error('Unexpected response format.');
