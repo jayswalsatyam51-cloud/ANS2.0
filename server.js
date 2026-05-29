@@ -5,16 +5,12 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const EXTRACT_MODEL = process.env.ANTHROPIC_EXTRACT_MODEL || 'claude-sonnet-4-6';
+const INTERPRET_MODEL = process.env.ANTHROPIC_INTERPRET_MODEL || 'claude-sonnet-4-6';
 
 if (!API_KEY || API_KEY === 'your-api-key-here') {
-  console.error('ERROR: ANTHROPIC_API_KEY is not set (required for PDF extraction).');
+  console.error('ERROR: ANTHROPIC_API_KEY is not set (required for extraction and interpretation).');
   process.exit(1);
-}
-
-if (!GEMINI_API_KEY) {
-  console.warn('WARN: GEMINI_API_KEY is not set — Clinical Interpretation buttons will fail.');
 }
 
 app.use((req, res, next) => {
@@ -217,7 +213,7 @@ RULES:
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: EXTRACT_MODEL,
           max_tokens: 2048,
           messages: [{
             role: 'user',
@@ -294,12 +290,6 @@ RULES:
 });
 
 app.post('/api/messages', async (req, res) => {
-  if (!GEMINI_API_KEY) {
-    return res.status(500).json({
-      error: { message: 'GEMINI_API_KEY is not configured on the server. Add it in Render Environment.' },
-    });
-  }
-
   const { system, messages, max_tokens: maxTokens } = req.body || {};
   const userText = messages?.[0]?.content;
   if (!userText || typeof userText !== 'string') {
@@ -307,53 +297,79 @@ app.post('/api/messages', async (req, res) => {
   }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: system ? { parts: [{ text: String(system) }] } : undefined,
-        contents: [{ role: 'user', parts: [{ text: userText }] }],
-        generationConfig: {
-          maxOutputTokens: Number(maxTokens) || 3000,
-          temperature: 0.3,
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+
+    let response;
+    try {
+      response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01',
         },
-      }),
-    });
+        body: JSON.stringify({
+          model: INTERPRET_MODEL,
+          max_tokens: Number(maxTokens) || 3000,
+          system: system ? String(system) : undefined,
+          messages: [{ role: 'user', content: userText }],
+        }),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const raw = await response.text();
     let data;
     try {
       data = JSON.parse(raw);
     } catch {
-      return res.status(500).json({ error: { message: 'Gemini returned non-JSON: ' + raw.slice(0, 200) } });
+      return res.status(500).json({ error: { message: 'API returned non-JSON: ' + raw.slice(0, 200) } });
     }
 
-    if (!response.ok) {
-      const msg = data?.error?.message || `Gemini API error (HTTP ${response.status})`;
-      console.error('[messages] Gemini error:', msg);
-      return res.status(response.status === 429 ? 429 : 500).json({ error: { message: msg } });
+    if (response.status === 429 || isRateLimitError(data?.error?.message)) {
+      const msg = data?.error?.message || 'API rate limit reached.';
+      return res.status(429).json({
+        error: { message: msg },
+        retryAfterSeconds: parseRetryAfterSeconds(msg),
+      });
     }
 
-    const text = (data.candidates || [])
-      .flatMap(c => c.content?.parts || [])
-      .map(p => p.text || '')
-      .join('')
-      .trim();
+    if (data.error) {
+      const msg = typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error;
+      console.error('[messages] Anthropic error:', msg);
+      return res.status(500).json({ error: { message: msg } });
+    }
 
+    if (!data.content || !Array.isArray(data.content)) {
+      return res.status(500).json({ error: { message: 'Unexpected response from API.' } });
+    }
+
+    const text = data.content.map(b => b.text || '').join('').trim();
     if (!text) {
-      const blockReason = data.candidates?.[0]?.finishReason || 'unknown';
-      return res.status(500).json({ error: { message: `Gemini returned empty text (finish: ${blockReason}).` } });
+      return res.status(500).json({ error: { message: 'API returned empty text.' } });
     }
 
     res.json({ content: [{ type: 'text', text }] });
   } catch (err) {
-    console.error('[messages] Error:', err.message);
+    console.error('[messages] Error:', err.name, err.message);
+    if (err.name === 'AbortError') {
+      return res.status(504).json({ error: { message: 'Interpretation request timed out after 2 minutes.' } });
+    }
+    if (isRateLimitError(err.message)) {
+      return res.status(429).json({
+        error: { message: err.message },
+        retryAfterSeconds: parseRetryAfterSeconds(err.message),
+      });
+    }
     res.status(500).json({ error: { message: err.message } });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`VitalScan Extractor running at http://localhost:${PORT}`);
-  if (GEMINI_API_KEY) console.log(`Clinical interpretation: Gemini (${GEMINI_MODEL})`);
+  console.log(`Extraction model: ${EXTRACT_MODEL}`);
+  console.log(`Interpretation model: ${INTERPRET_MODEL}`);
 });
